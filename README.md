@@ -223,7 +223,7 @@ Qualitatively, the run retrieved relevant sources for supported questions such a
 
 The following screenshot was captured from the running Streamlit app at `http://localhost:8501` with the retrieval controls and suggested questions visible:
 
-![RAG Document Assistant running in Streamlit](rag-assistant-project/docs/screenshots/Screenshot 2026-09-11 173512.png)
+![RAG Document Assistant running in Streamlit](docs\screenshots\Screenshot 2026-09-11 173512.png)
 
 The screenshot was captured from the running local UI. To reproduce it locally, start the backend and frontend using the commands above. The app shows the backend connection URL, a health-check action, the `top_k` slider, the diverse-sources option, suggested questions, and a chat input.
 
