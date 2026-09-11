@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+pydantic
+pydantic-settings
+pypdf
+chromadb
+sentence-transformers
+scikit-learn
+ollama
