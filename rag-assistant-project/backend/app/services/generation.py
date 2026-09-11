@@ -1,106 +1,91 @@
 from __future__ import annotations
 
 import logging
+import re
+from typing import Any
 
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-try:
-    import ollama
-    OLLAMA_AVAILABLE = True
-except ImportError:
-    ollama = None
-    OLLAMA_AVAILABLE = False
-    logger.warning("Install ollama and start the local service to generate answers.")
-
-
 UNSUPPORTED_ANSWER = "The answer is not supported by the provided documents."
+OLLAMA_AVAILABLE = True
 
-# Only used to decide whether to clear `sources` on the response. We check
-# whether the answer STARTS WITH one of these, not whether it merely
-# contains the phrase anywhere -- a substring-anywhere check would clear
-# sources for legitimate answers that happen to mention a phrase like
-# "cannot be determined" mid-sentence as real content.
-UNSUPPORTED_PREFIXES = (
-    "the answer is not supported by the provided documents",
-    "the provided context does not directly support",
-    "the provided documents do not directly support",
-    "the text does not directly",
-    "i'm sorry",
-    "i cannot provide",
+try:
+	from ollama import Client
+except ImportError:
+	Client = None
+	OLLAMA_AVAILABLE = False
+
+CHITCHAT_PATTERNS = (
+	r"^(hi|hello|hey|good morning|good afternoon|good evening)[!. ]*$",
+	r"^(thanks|thank you|thx)[!. ]*$",
+	r"^how are you[?.! ]*$",
 )
 
-PROMPT_TEMPLATE = """You are a closed-book document question-answering assistant.
-Use ONLY the provided context. Do not use outside knowledge or guess.
-If the context does not directly support the answer, respond exactly:
-{unsupported_answer}
-For a supported answer, write exactly 3 short Markdown bullet points:
-- **Definition:** Give the direct definition or answer. [filename, page N]
-- **How it works:** Explain the main idea or process. [filename, page N]
-- **Why it matters:** State the benefit or importance when supported. [filename, page N]
-Replace all bracketed instructions with real content. Do not copy the words "one direct definition or answer".
-Do not return only a title, abbreviation, or one sentence. Never omit any bullet or citation.
 
-Context:
-{context}
-
-Question: {question}
-Answer:"""
+def is_chitchat(question: str) -> bool:
+	normalized = re.sub(r"\s+", " ", question.strip().lower())
+	return any(re.match(pattern, normalized) for pattern in CHITCHAT_PATTERNS)
 
 
-def build_prompt(question: str, sources: list[dict]) -> str:
-    context = "\n\n".join(
-        f"[{item['metadata']['source']}, page {item['metadata']['page']}] {item['text']}"
-        for item in sources
-    )
-    return PROMPT_TEMPLATE.format(
-        unsupported_answer=UNSUPPORTED_ANSWER,
-        context=context,
-        question=question,
-    )
+def handle_chitchat(question: str) -> str:
+	normalized = question.strip().lower()
+	if normalized.startswith(("thanks", "thank you", "thx")):
+		return "You're welcome! How can I help you?"
+	if normalized.startswith("how are you"):
+		return "I'm doing well! How can I help you?"
+	return "Hello! How can I help you?"
 
 
-def generate_with_ollama(prompt: str) -> str:
-    if not OLLAMA_AVAILABLE or ollama is None:
-        return "Ollama is unavailable. Review the retrieved context below."
-    try:
-        response = ollama.chat(
-            model=settings.ollama_model,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        return response["message"]["content"]
-    except Exception as error:
-        logger.error("Ollama request failed: %s", error)
-        return f"Ollama request failed: {error}"
+def _build_context(sources: list[dict[str, Any]]) -> str:
+	return "\n\n".join(
+		f"[{item['metadata']['source']}, page {item['metadata']['page']}]\n{item['text']}"
+		for item in sources
+		if item.get("text", "").strip()
+	)
 
 
-def is_refusal(answer: str) -> bool:
-    normalized = answer.strip().lower()
-    return any(normalized.startswith(prefix) for prefix in UNSUPPORTED_PREFIXES)
+def _fallback_answer(sources: list[dict[str, Any]]) -> str:
+	first = sources[0]
+	metadata = first["metadata"]
+	excerpt = first["text"].strip()
+	if len(excerpt) > 600:
+		excerpt = excerpt[:600].rsplit(" ", 1)[0] + "..."
+	return f"{excerpt}\n\n[{metadata['source']}, page {metadata['page']}]"
 
 
-def answer_question(question: str, sources: list[dict]) -> dict:
-    """
-    sources: the list of retrieved chunk dicts from RetrievalService.retrieve()
-    Returns {"question": ..., "answer": ..., "sources": ...} where `sources`
-    is cleared to [] whenever there's nothing to ground the answer in.
-    """
-    if not sources:
-        return {
-            "question": question,
-            "answer": UNSUPPORTED_ANSWER,
-            "sources": [],
-        }
+def _generate_with_ollama(question: str, context: str) -> str | None:
+	if Client is None:
+		return None
+	try:
+		client = Client(host=getattr(settings, "ollama_host", "http://localhost:11434"))
+		response = client.chat(
+			model=settings.ollama_model,
+			messages=[{
+				"role": "user",
+				"content": (
+					"Answer only from the context. If unsupported, say exactly: "
+					f"{UNSUPPORTED_ANSWER}\n\nContext:\n{context}\n\nQuestion: {question}"
+				),
+			}],
+		)
+		answer = response.get("message", {}).get("content", "").strip()
+		return answer or None
+	except Exception as error:
+		logger.warning("Ollama unavailable: %s", error)
+		return None
 
-    prompt = build_prompt(question, sources)
-    answer = generate_with_ollama(prompt)
 
-    if is_refusal(answer):
-        sources = []
+def answer_question(question: str, sources: list[dict[str, Any]]) -> dict[str, Any]:
+	question = question.strip()
+	if is_chitchat(question):
+		return {"question": question, "route": "chitchat", "answer": handle_chitchat(question), "sources": []}
+	if not sources:
+		return {"question": question, "route": "off_topic", "answer": UNSUPPORTED_ANSWER, "sources": []}
 
-    return {
-        "question": question,
-        "answer": answer,
-        "sources": sources,
-    }
+	context = _build_context(sources)
+	answer = _generate_with_ollama(question, context) or _fallback_answer(sources)
+	if answer.strip() == UNSUPPORTED_ANSWER:
+		return {"question": question, "route": "off_topic", "answer": UNSUPPORTED_ANSWER, "sources": []}
+	return {"question": question, "route": "rag", "answer": answer, "sources": sources}

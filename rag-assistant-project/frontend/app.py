@@ -4,6 +4,8 @@ import streamlit as st
 
 import api_client
 
+UNSUPPORTED_ANSWER = "The answer is not supported by the provided documents."
+
 st.set_page_config(
     page_title="RAG Document Assistant",
     page_icon="📚",
@@ -26,6 +28,10 @@ st.markdown("""
 
 if "history" not in st.session_state:
     st.session_state.history = []  # list of {"question": ..., "answer": ..., "sources": ...}
+if "top_k" not in st.session_state:
+    st.session_state.top_k = 4
+if "diverse_sources" not in st.session_state:
+    st.session_state.diverse_sources = False
 
 
 def render_sidebar() -> None:
@@ -44,16 +50,16 @@ def render_sidebar() -> None:
                     st.error(str(error))
                     
         with st.expander("🎯 Retrieval Parameters", expanded=True):
-            st.session_state.top_k = st.slider(
+            st.number_input(
                 "Context chunks (top_k)",
                 min_value=1,
                 max_value=10,
-                value=4,
+                key="top_k",
                 help="Number of document chunks to retrieve as context."
             )
-            st.session_state.diverse_sources = st.checkbox(
+            st.checkbox(
                 "Diverse sources",
-                value=False,
+                key="diverse_sources",
                 help="Restrict to maximum one chunk per source file."
             )
             
@@ -63,9 +69,8 @@ def render_sidebar() -> None:
             st.rerun()
 
 
-def render_sources(sources: list[dict]) -> None:
-    if not sources:
-        st.caption("No sources were used for this answer.")
+def render_sources(sources: list[dict], answer: str = "") -> None:
+    if not sources or answer.strip() == UNSUPPORTED_ANSWER:
         return
 
     for item in sources:
@@ -80,7 +85,7 @@ def render_history() -> None:
             st.write(turn["question"])
         with st.chat_message("assistant"):
             st.write(turn["answer"])
-            render_sources(turn["sources"])
+            render_sources(turn["sources"], turn["answer"])
 
 
 def handle_question(question: str) -> None:
@@ -101,7 +106,7 @@ def handle_question(question: str) -> None:
 
         st.write(result["answer"])
         st.caption(f"Embedding backend: `{result.get('embedding_backend', 'unknown')}`")
-        render_sources(result["sources"])
+        render_sources(result["sources"], result["answer"])
 
     st.session_state.history.append({
         "question": question,
@@ -131,12 +136,15 @@ def main() -> None:
     st.markdown("Ask questions grounded in your indexed PDF library. Answers are refused when the documents don't support them.")
 
     render_sidebar()
-    render_history()
+    chat_container = st.container()
+    with chat_container:
+        render_history()
     
     if "pending_question" in st.session_state:
         q = st.session_state.pending_question
         del st.session_state.pending_question
-        handle_question(q)
+        with chat_container:
+            handle_question(q)
     else:
         if not st.session_state.history:
             st.markdown("<br>", unsafe_allow_html=True)
@@ -144,7 +152,8 @@ def main() -> None:
 
     question = st.chat_input("Ask a question about your documents...")
     if question:
-        handle_question(question)
+        with chat_container:
+            handle_question(question)
 
 
 if __name__ == "__main__":

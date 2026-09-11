@@ -5,7 +5,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.schemas.query import HealthResponse, QueryRequest, QueryResponse, SourceItem
-from app.services.generation import OLLAMA_AVAILABLE, answer_question
+from app.services.generation import OLLAMA_AVAILABLE, UNSUPPORTED_ANSWER, answer_question
 from app.services.retrieval import RetrievalService, get_retrieval_service
 
 logger = logging.getLogger(__name__)
@@ -29,6 +29,7 @@ def query_documents(
 
     result = answer_question(request.question, retrieved)
 
+    response_sources = [] if result["answer"].strip() == UNSUPPORTED_ANSWER else result["sources"]
     sources = [
         SourceItem(
             source=item["metadata"]["source"],
@@ -37,7 +38,7 @@ def query_documents(
             distance=round(item["distance"], 4),
             text=item["text"],
         )
-        for item in result["sources"]
+        for item in response_sources
     ]
 
     return QueryResponse(

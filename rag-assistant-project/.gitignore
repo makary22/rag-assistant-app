@@ -14,7 +14,7 @@ backend/data/vector_store/
 # Retrieval cache
 backend/data/*cache*
 *.pkl
-
+*.pdf
 # OS
 .DS_Store
 Thumbs.db

@@ -200,6 +200,10 @@ curl -X POST http://localhost:8000/api/query \
 
 The response includes the question, generated answer, embedding backend, and source objects containing `source`, `page`, `chunk`, `distance`, and retrieved text.
 
+### Retrieval behavior
+
+Specific questions are filtered by the configured embedding-distance threshold. Document-overview questions, such as `What is the main topic of these documents?`, `What is the main objective of these documents?`, and summary requests, use the best representative chunks after the normal text-quality filters. This ensures broad questions receive document context while unsupported specific questions can still be refused.
+
 ## Evaluation Results: Phase 2.6
 
 The Phase 2.6 evaluation is captured in `notebooks/rag_pipeline.ipynb` and consists of **10 questions** spanning RAG, preprocessing, reliability, embeddings, transformers, training versus inference, vector databases, model degradation, project evaluation, and model limitations.
@@ -231,4 +235,4 @@ Run the backend test suite from the `backend/` directory:
 python -m pytest
 ```
 
-The test suite currently includes a FastAPI health endpoint smoke test.
+The test suite covers the FastAPI health endpoint, relevant and irrelevant questions, empty questions, and invalid request bodies.
