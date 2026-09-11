@@ -205,7 +205,7 @@ class RetrievalService:
 		for distance, lexical_matches, chunk in scored:
 			if len(chunk["text"]) < MIN_CHUNK_TEXT_LENGTH or _low_quality(chunk["text"]):
 				continue
-			if not overview_query and distance > max_distance and lexical_matches == 0:
+			if not overview_query and distance > max_distance:
 				continue
 			source = chunk["metadata"]["source"]
 			if diverse_sources and source in seen_sources:

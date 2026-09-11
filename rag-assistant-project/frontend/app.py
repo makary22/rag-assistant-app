@@ -140,20 +140,20 @@ def main() -> None:
     with chat_container:
         render_history()
     
+    question = st.chat_input("Ask a question about your documents...")
+
     if "pending_question" in st.session_state:
         q = st.session_state.pending_question
         del st.session_state.pending_question
         with chat_container:
             handle_question(q)
+    elif question:
+        with chat_container:
+            handle_question(question)
     else:
         if not st.session_state.history:
             st.markdown("<br>", unsafe_allow_html=True)
             render_suggested_questions()
-
-    question = st.chat_input("Ask a question about your documents...")
-    if question:
-        with chat_container:
-            handle_question(question)
 
 
 if __name__ == "__main__":

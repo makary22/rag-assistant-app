@@ -62,13 +62,20 @@ def _generate_with_ollama(question: str, context: str) -> str | None:
 		client = Client(host=getattr(settings, "ollama_host", "http://localhost:11434"))
 		response = client.chat(
 			model=settings.ollama_model,
-			messages=[{
-				"role": "user",
-				"content": (
-					"Answer only from the context. If unsupported, say exactly: "
-					f"{UNSUPPORTED_ANSWER}\n\nContext:\n{context}\n\nQuestion: {question}"
-				),
-			}],
+			messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a strict document assistant. You MUST ONLY use the provided Context to answer the user's Question. "
+                        "Do NOT use any external or internal knowledge. "
+                        f"If the answer cannot be found in the Context, you MUST reply exactly with this phrase: {UNSUPPORTED_ANSWER}"
+                    )
+                },
+                {
+				    "role": "user",
+				    "content": f"Context:\n{context}\n\nQuestion: {question}",
+			    }
+            ],
 		)
 		answer = response.get("message", {}).get("content", "").strip()
 		return answer or None
